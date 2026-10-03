@@ -1,259 +1,115 @@
-// popup.js — Codex 登陆助手核心交互逻辑
-// 遵循纯本地处理原则，不存储、不上云
+import { beginAuthorization, exchangeCallback, normalizeCredential, codexFormat } from '../oauth.js';
 
-// 缓存全局 Session 数据
-let globalSession = null;
-let countdownInterval = null;
+const $ = id => document.getElementById(id);
+let pending = null;
+let credential = null;
+let busy = false;
 
-document.addEventListener('DOMContentLoaded', () => {
-  // 初始化界面获取数据
-  initSessionFetch();
-  
-  // 绑定基础事件监听
-  bindEvents();
+function status(message, error = false) {
+  $('status').textContent = message;
+  $('status').dataset.error = String(error);
+}
+
+function render() {
+  $('callback-panel').hidden = !pending;
+  $('result').hidden = !credential;
+  if (!credential) {
+    $('preview').textContent = '';
+    $('account').textContent = '';
+    $('expiry').textContent = '';
+    return;
+  }
+  $('account').textContent = `账号：${credential.email || '未提供邮箱'} · ${credential.account_id}`;
+  $('expiry').textContent = `Access token 到期：${new Date(credential.expired).toLocaleString()}（不代表 refresh token 的有效期）`;
+  const preview = { ...credential };
+  for (const key of ['access_token', 'refresh_token', 'id_token']) preview[key] = '[已提供，隐藏显示]';
+  $('preview').textContent = JSON.stringify(preview, null, 2);
+}
+
+async function run(action) {
+  if (busy) return;
+  busy = true;
+  document.querySelectorAll('button,input').forEach(el => el.disabled = true);
+  try { await action(); } catch (error) { status(error.message || '操作失败，请重新授权。', true); }
+  finally {
+    busy = false;
+    document.querySelectorAll('button,input').forEach(el => el.disabled = false);
+    render();
+  }
+}
+
+$('login').addEventListener('click', () => run(async () => {
+  pending = null;
+  credential = null;
+  $('callback').value = '';
+  const request = await beginAuthorization();
+  await chrome.tabs.create({ url: request.url });
+  pending = request;
+  status('已打开官方授权页面。完成后将完整回调网址粘贴到本页，10 分钟内有效。');
+}));
+
+$('cancel').addEventListener('click', () => {
+  pending = null;
+  $('callback').value = '';
+  status('已取消本次授权。');
+  render();
 });
 
-/**
- * 初始化 Session 获取
- */
-function initSessionFetch() {
-  showState('loading');
-  
-  // 向 background.js 发送请求，发起跨域 fetch
-  chrome.runtime.sendMessage({ action: 'fetch_session' }, (response) => {
-    // 拦截通道关闭或报错
-    if (chrome.runtime.lastError) {
-      console.error('通信错误:', chrome.runtime.lastError);
-      showState('unauthorized');
-      return;
-    }
-
-    if (response && response.success) {
-      globalSession = response.data;
-      renderAuthorizedState(response.data);
-      showState('authorized');
-    } else {
-      showState('unauthorized');
-    }
-  });
-}
-
-/**
- * 切换界面显示状态
- * @param {'loading'|'unauthorized'|'authorized'} state 
- */
-function showState(state) {
-  const loadingEl = document.getElementById('state-loading');
-  const unauthorizedEl = document.getElementById('state-unauthorized');
-  const authorizedEl = document.getElementById('state-authorized');
-
-  loadingEl.classList.remove('active');
-  unauthorizedEl.classList.remove('active');
-  authorizedEl.classList.remove('active');
-
-  if (state === 'loading') {
-    loadingEl.classList.add('active');
-  } else if (state === 'unauthorized') {
-    unauthorizedEl.classList.add('active');
-  } else if (state === 'authorized') {
-    authorizedEl.classList.add('active');
+$('exchange').addEventListener('click', () => run(async () => {
+  if (!pending) throw new Error('请先发起授权。');
+  status('正在向官方交换授权码…');
+  try {
+    credential = await exchangeCallback($('callback').value.trim(), pending);
+    status('已收到 OAuth 凭证，可导出 New API JSON。尚未发起模型调用。');
+  } finally {
+    // Do not retry a possibly consumed authorization code after a network failure.
+    pending = null;
+    $('callback').value = '';
   }
+}));
+
+$('file').addEventListener('change', () => run(async () => {
+  const file = $('file').files[0];
+  if (!file) return;
+  credential = null;
+  pending = null;
+  $('callback').value = '';
+  try {
+    if (file.size > 1024 * 1024) throw new Error('文件超过 1 MB，请选择单账号 auth.json。');
+    let data;
+    try { data = JSON.parse(await file.text()); } catch { throw new Error('文件不是合法 JSON。'); }
+    credential = normalizeCredential(data);
+    status('已在本地转换格式。没有向上游发送请求，无法据此确认凭证是否被撤销。');
+  } finally { $('file').value = ''; }
+}));
+
+async function download(value, filename) {
+  const blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  try {
+    await chrome.downloads.download({ url, filename, saveAs: true });
+    status('已提交保存请求。请在保存窗口中选择 D 盘位置。');
+  } finally { setTimeout(() => URL.revokeObjectURL(url), 60000); }
 }
 
-/**
- * 渲染已登录状态的 UI 数据
- */
-function renderAuthorizedState(session) {
-  const avatarEl = document.getElementById('user-avatar');
-  const nameEl = document.getElementById('user-name');
-  const emailEl = document.getElementById('user-email');
-  const planEl = document.getElementById('badge-plan');
-  const expiresEl = document.getElementById('token-expires');
-
-  // 用户个人信息
-  const user = session.user || {};
-  avatarEl.src = user.image || 'https://lh3.googleusercontent.com/a/default-user=s96-c';
-  nameEl.textContent = user.name || 'ChatGPT 用户';
-  emailEl.textContent = user.email || '未绑定邮箱';
-
-  // 账户套餐
-  const account = session.account || {};
-  const planType = (account.planType || 'free').toUpperCase();
-  planEl.textContent = planType;
-  
-  if (planType === 'PLUS' || planType === 'PRO') {
-    planEl.className = 'plan-badge plus';
-  } else {
-    planEl.className = 'plan-badge free';
-  }
-
-  // 有效期至
-  const expiresTime = session.expires ? new Date(session.expires) : null;
-  if (expiresTime) {
-    expiresEl.textContent = formatLocalDate(expiresTime);
-    // 启动剩余期限实时倒计时
-    startCountdown(expiresTime);
-  } else {
-    expiresEl.textContent = '长期有效';
-    document.getElementById('token-countdown').textContent = '无限';
-  }
-}
-
-/**
- * 绑定所有 DOM 按钮事件
- */
-function bindEvents() {
-  // 1. 未登录一键跳转
-  document.getElementById('btn-login').addEventListener('click', () => {
-    chrome.tabs.create({ url: 'https://chatgpt.com/' });
-    window.close(); // 关闭 popup 窗口
-  });
-
-  // 2. 导出 auth.json — 委托给 background service worker 执行下载
-  document.getElementById('btn-download').addEventListener('click', () => {
-    if (!globalSession) return;
-    const authJsonString = generateCodexAuthJson(globalSession);
-    
-    chrome.runtime.sendMessage({
-      action: 'download_auth_json',
-      jsonContent: authJsonString
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('下载通信异常:', chrome.runtime.lastError);
-        showToast('❌ 下载失败，请重新尝试');
-        return;
-      }
-      if (response && response.success) {
-        showToast('🎉 auth.json 已开始下载');
-      } else {
-        showToast('❌ 下载失败，请重新尝试');
-      }
-    });
-  });
-}
-
-/**
- * 实时计算并更新剩余过期时间倒计时
- */
-function startCountdown(expiresTime) {
-  if (countdownInterval) clearInterval(countdownInterval);
-
-  const countdownEl = document.getElementById('token-countdown');
-
-  function update() {
-    const now = new Date();
-    const diff = expiresTime - now;
-
-    if (diff <= 0) {
-      countdownEl.textContent = '已过期';
-      countdownEl.className = 'detail-value text-danger';
-      clearInterval(countdownInterval);
-      return;
-    }
-
-    // 换算天、小时、分、秒
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-
-    let displayStr = '';
-    if (days > 0) displayStr += `${days}天`;
-    if (hours > 0 || days > 0) displayStr += `${hours}时`;
-    displayStr += `${minutes}分${seconds}秒`;
-
-    countdownEl.textContent = displayStr;
-  }
-
-  update();
-  countdownInterval = setInterval(update, 1000);
-}
-
-/**
- * 格式化输出本地化的年月日 时分秒
- */
-function formatLocalDate(date) {
-  const pad = (num) => String(num).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-/**
- * 核心转换逻辑：将获取到的 ChatGPT Session 数据转化为符合 Codex 要求的格式
- * 
- * ⚠️ 已知限制：refresh_token 使用的是 ChatGPT 的 sessionToken，
- * 它不是真正的 OAuth2 refresh_token（真正的 refresh_token 只能通过 auth.openai.com
- * 的验证流程获取，而该流程需要手机验证——正是本插件想绕过的障碍）。
- * Codex 在尝试刷新 token 时可能会失败，届时需要重新导出 auth.json。
- */
-function generateCodexAuthJson(session) {
-  const accountId = session.account?.id || '';
-  const email = session.user?.email || '';
-  const planType = session.account?.planType || 'free';
-  const iat = Math.floor(Date.now() / 1000);
-  const exp = session.expires ? Math.floor(new Date(session.expires).getTime() / 1000) : iat + (30 * 24 * 3600);
-
-  // 构建 Synthetic id_token (无签名 JWT)
-  const jwtHeader = { alg: 'none', typ: 'JWT', cpa_synthetic: true };
-  const jwtPayload = {
-    iat, exp,
-    "https://api.openai.com/auth": {
-      chatgpt_account_id: accountId,
-      chatgpt_plan_type: planType,
-      chatgpt_user_id: session.user?.id || '',
-      user_id: session.user?.id || ''
-    },
-    email
-  };
-
-  const base64UrlEncode = (obj) => {
-    const str = JSON.stringify(obj);
-    const base64 = btoa(unescape(encodeURIComponent(str)));
-    return base64.replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
-  };
-
-  const syntheticIdToken = `${base64UrlEncode(jwtHeader)}.${base64UrlEncode(jwtPayload)}.synthetic`;
-
-  const authConfig = {
-    auth_mode: "chatgpt",
-    OPENAI_API_KEY: null,
-    tokens: {
-      id_token: syntheticIdToken,
-      access_token: session.accessToken,
-      refresh_token: session.sessionToken || "placeholder",
-      account_id: accountId
-    },
-    last_refresh: new Date().toISOString()
-  };
-
-  return JSON.stringify(authConfig, null, 2);
-}
-
-/**
- * 一键复制公共方法
- */
-function copyToClipboard(text, successMsg) {
-  navigator.clipboard.writeText(text)
-    .then(() => {
-      showToast(successMsg);
-    })
-    .catch(err => {
-      console.error('复制失败:', err);
-      showToast('❌ 复制失败，请手动选取');
-    });
-}
-
-/**
- * 弹出精致轻巧的 Toast 反馈
- */
-function showToast(message) {
-  const toast = document.getElementById('toast');
-  const toastMsg = document.getElementById('toast-message');
-  
-  toastMsg.textContent = message;
-  toast.classList.add('show');
-  
-  // 2秒后淡出
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2000);
-}
+$('download').addEventListener('click', () => run(async () => {
+  if (!credential) return;
+  await download(normalizeCredential(credential), 'newapi-codex.json');
+}));
+$('copy').addEventListener('click', () => run(async () => {
+  if (!credential) return;
+  await navigator.clipboard.writeText(JSON.stringify(normalizeCredential(credential), null, 2));
+  status('New API JSON 已复制。粘贴到你自己的渠道密钥框即可。');
+}));
+$('codex').addEventListener('click', () => run(async () => {
+  if (!credential) return;
+  await download(codexFormat(normalizeCredential(credential)), 'auth.json');
+}));
+$('clear').addEventListener('click', () => {
+  credential = null;
+  pending = null;
+  $('callback').value = '';
+  $('file').value = '';
+  status('已清除本页内存中的凭证。已下载文件和系统剪贴板未被删除。');
+  render();
+});

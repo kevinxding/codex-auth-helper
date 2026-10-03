@@ -1,55 +1,75 @@
-# 🔐 Codex 认证助手 (Codex Auth Helper)
+# New API Codex OAuth 助手
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](./extension/manifest.json)
-[![Manifest V3](https://img.shields.io/badge/Chrome_Extension-Manifest_V3-orange.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
-[![Local Only](https://img.shields.io/badge/Security-100%25_Local-green.svg)](#-安全与隐私承诺)
-[![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
+基于 [zhishile/codex-auth-helper](https://github.com/zhishile/codex-auth-helper) 的 Chromium / Edge 扩展改造版。面向 New API 的 **ChatGPT Subscription (Codex)** 渠道，生成可以粘贴到渠道密钥框的平铺 JSON。
 
-**Codex 认证助手** 是一款专为 Codex 开发者设计的安全、轻量、高颜值的凭证管理与本地配置备份辅助 Chrome 扩展程序。
+## 与原版的区别
 
-通过高度安全的本地沙盒机制，本插件能够帮助您一键将 ChatGPT 登录会话凭证快速安全地导出，并自动转换为符合 Codex 运行规范的 `auth.json` 配置文件。
+- 使用 OAuth Authorization Code + PKCE S256；用户在 `auth.openai.com` 自行登录。
+- 通过官方 token 接口取得真实 `access_token`、`refresh_token` 和 `id_token`。
+- 删除网页 Session 抓取、合成 id_token、sessionToken/placeholder 冒充 refresh_token 的逻辑。
+- 支持导入 Codex 原生嵌套 `auth.json` 或 New API 平铺凭证，并检查字段、账号一致性、access token 到期时间。
+- 一键复制或保存 New API JSON；同时提供 Codex 原生格式导出。
+- 默认脱敏展示 token，凭证只保存在当前扩展页内存；不写浏览器同步存储，不自动上传到 New API。
+- OAuth 请求仅发往 `https://auth.openai.com/oauth/token`。不是离线授权工具。
 
----
+## 安装（无需构建）
 
-## 🌟 核心特性
+1. 下载本分支或使用本地仓库，放在 D 盘。
+2. 打开 Edge 的 `edge://extensions`，开启开发者模式。
+3. 点击“加载解压缩的扩展”，选择本仓库的 `extension` 文件夹。
+4. 点击工具栏扩展图标，会打开一个完整操作页。
 
-- 📡 **智能本地状态检测**：秒级检测并自动对齐当前浏览器的 ChatGPT 授权状态，直观展现头像、邮箱及订阅计划（Free / Plus / Pro）。
-- ⏱️ **实时有效期倒计时**：精确读取 Token 失效时间，并在 Popup 界面上提供秒级的生存期实时倒计时。
-- ⚙️ **自动化格式合成**：完美实现 JWT 仿真构造，自动生成 Codex 规范所需的 **Synthetic 签名 id_token**，实现无缝鉴权。
-- 🔒 **100% 纯本地离线处理**：
-  - 核心逻辑基于闭环的浏览器沙盒处理，生成的配置直接以 `data:` URL 触发下载，不留任何临时 Blob 内存漏洞。
-  - **绝不经过任何第三方服务器**（零上传接口，数据不上云），完全打消您的隐私顾虑。
-- 🎨 **极致美学设计**：精心打磨的毛玻璃拟物化 (Glassmorphism) UI，支持细腻的悬浮过渡、动感 Toast 反馈以及多套主题配色的极速落地页。
+替换旧版本时，在原扩展卡片上重新加载；如果它仍指向旧目录，请加载本版的 `extension` 文件夹。
 
----
+## 使用 OAuth 获得 refresh_token
 
-## 🚀 极速上手
+1. 点击“使用 ChatGPT 进行 OAuth 授权”，在新标签页完成登录及官方要求的验证。保持扩展操作页打开。
+2. 登录后跳转到 `http://localhost:1455/auth/callback?code=…&state=…`。本插件没有本地 HTTP 服务，因此“无法访问此页面”是可预期的。
+3. 复制这个页面地址栏的完整网址，返回扩展粘贴，点击“完成授权并读取凭证”。不要只复制 code。
+4. 插件会校验回调地址、state、10 分钟有效期，再使用本次 PKCE verifier 交换凭证。
+5. 点击“保存 New API JSON”（保存到 D 盘）或“复制 New API JSON”。
 
-### 1. 开发者模式安装 (本地加载)
-1. 下载或克隆本仓库到您的本地电脑。
-2. 打开 Chrome 浏览器，在地址栏输入 `chrome://extensions/` 并回车。
-3. 在右上角开启 **"开发者模式" (Developer mode)** 开关。
-4. 点击左上角的 **"加载已解压的扩展程序" (Load unpacked)**。
-5. 选择本仓库中的 `extension` 文件夹（即包含 `manifest.json` 的目录）。
-6. 安装完成后，在浏览器工具栏的“拼图”图标中找到 **Codex 认证助手** 并将其固定。
+请勿同时运行另一个 Codex 登录回调服务。回调错误、超时或网络错误后应重新开始登录，避免重复使用已消费的授权码。刷新或关闭扩展页会丢失此次授权状态和内存凭证。
 
-### 2. 导出 `auth.json`
-1. 确保您在当前浏览器中已经登录了 [ChatGPT 官网](https://chatgpt.com/)。
-2. 点击浏览器右上角的插件图标，打开 **Codex 认证助手** 弹窗。
-3. 插件会自动读取已登录的会话。如果未登录，可点击 **一键前往登录**。
-4. 状态识别成功后，点击 **生成并保存 auth.json**，即可一键下载已组装完毕的配置文件。
+## 导入已有文件
 
-## 🔒 安全与隐私承诺
+展开“已有 Codex auth.json？直接导入”，选择本地文件。文件不通过网络发送。
 
-> [!IMPORTANT]
-> 您的身份凭证与 Session 属于极度敏感的用户隐私，**绝对不能泄露或上传到任何服务器**！
+缺少真实 refresh_token、带 synthetic id_token、账号字段矛盾或 access token 过期的文件会被拒绝。仅改变 JSON 格式无法修复被撤销的凭证，也不能从网页 Session 凭空生成 refresh_token。
 
-- **零敏感数据收集**：本插件绝不收集、上传或转发任何个人隐私及凭证。
-- **最小化权限声明**：仅声明 `downloads`（保存文件）与 `https://chatgpt.com/`（安全读取本地会话），杜绝冗余危险行为。
-- **彻底的代码闭环**：您可以随时通过浏览器开发者工具 (F12) 检查 `background.js` 和 `popup.js`。没有引入任何外部不可控 CDN 第三方库，所有静态资源均本地打包。
+## New API 导出格式
 
----
+字段对照 `QuantumNous/new-api` 的 `v1.0.0-rc.41` 源码：
 
-## 📜 许可证
+```json
+{
+  "access_token": "<OAuth 返回值>",
+  "refresh_token": "<OAuth 返回值>",
+  "id_token": "<OAuth 返回值>",
+  "account_id": "<token 中的 ChatGPT account ID>",
+  "type": "codex",
+  "expired": "<access_token.exp 转换成 ISO 8601>",
+  "email": "<存在时导出>",
+  "last_refresh": "<真实授权/刷新时间，存在时导出>"
+}
+```
 
-本项目基于 [MIT License](LICENSE) 开源，允许任何个人或团队进行自由修改与二次分发，但请务必保留原作者署名及开源协议声明。
+进入 New API → 渠道 → ChatGPT Subscription (Codex) → 将完整 JSON 粘贴到密钥框。文件不是全渠道备份；不要拿它去导入整个渠道表。导入旧文件时不会把导入时间冒充 last_refresh。
+
+New API rc.41 的刷新实现固定使用 Codex OAuth client ID，因此插件使用相同 client ID。OAuth 获取行为受上游接口和账号授权约束；本项目不是 OpenAI 官方插件。
+
+## 刷新与凭证边界
+
+插件负责获取和导出，后续由 New API 管理刷新。插件不在后台定时刷新，以免导出后与服务器竞争轮换同一 refresh_token。不要把同一份可刷新凭证同时交给多个自动刷新客户端。
+
+完整导出文件和剪贴板内容相当于登录凭证。页面的“清除”仅清除内存，不删除已保存文件、不撤销上游授权，也不会更改系统剪贴板。
+
+JWT 只做结构检查和元数据解码，没有离线验证签名或上游调用权限。refresh_token 是否仍有效只能由官方授权服务器判断。获取模型列表成功也不等于实际推理请求成功。
+
+## 实现来源与验证状态
+
+参照其他开源实现的协议设计，并按浏览器扩展环境重新实现，无运行时第三方依赖。具体文件、版本和采用的设计见 [REFERENCES.md](REFERENCES.md)。
+
+按需求没有编写或运行测试，也没有使用真实账号完成 OAuth / New API 端到端调用。仅进行代码审阅和静态语法检查；不得把此版本描述为已实测登录成功。
+
+`landing-page/` 是保留的上游旧展示页，不代表本版行为；本 README 与 extension/ 为本版依据。

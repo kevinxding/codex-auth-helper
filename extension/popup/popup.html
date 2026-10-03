@@ -1,201 +1,47 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Codex 登陆助手</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>New API Codex OAuth 助手</title>
   <link rel="stylesheet" href="popup.css">
 </head>
-
 <body>
-  <div class="app-container">
-    <!-- 头部区域 -->
-    <header class="app-header">
-      <div class="logo-container">
-        <div class="logo-glow"></div>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-          stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-        </svg>
-        <div class="logo-text">
-          <h1>Codex 登陆助手</h1>
-          <span class="logo-sub">Codex Auth Helper v1.0.0</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- 主体内容区 -->
-    <main class="app-main">
-
-      <!-- 加载中状态 -->
-      <div id="state-loading" class="state-container active">
-        <div class="loader">
-          <div class="loader-ring"></div>
-          <div class="loader-dot"></div>
-        </div>
-        <p class="loading-text">正在安全地获取登陆信息...</p>
-      </div>
-
-      <!-- 未登录状态 -->
-      <div id="state-unauthorized" class="state-container">
-        <div class="alert-icon-container">
-          <svg class="alert-icon animate-bounce" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round"
-              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-          </svg>
-        </div>
-        <h2 class="state-title">未检测到 ChatGPT 登录</h2>
-        <p class="state-desc">请先登录 ChatGPT 账号。插件将安全地从您本地浏览器缓存中提取登录凭证，免除手机号验证。</p>
-        <button id="btn-login" class="btn-primary ripple">
-          <span>一键跳转 ChatGPT 登录</span>
-          <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- 已登录状态 -->
-      <div id="state-authorized" class="state-container">
-        <!-- 账户简卡 -->
-        <div class="profile-card">
-          <div class="profile-avatar-container">
-            <img id="user-avatar" class="profile-avatar" src="" alt="用户头像">
-            <div class="avatar-ring"></div>
-          </div>
-          <div class="profile-info">
-            <h3 id="user-name">读取中...</h3>
-            <p id="user-email">读取中...</p>
-          </div>
-          <div id="badge-plan" class="plan-badge">FREE</div>
-        </div>
-
-        <!-- 数据详情面板 -->
-        <div class="details-panel glass-card">
-          <div class="detail-row">
-            <span class="detail-label">状态:</span>
-            <span class="detail-value text-glow-success">登录成功</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">有效期至:</span>
-            <span id="token-expires" class="detail-value">读取中...</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">剩余期限:</span>
-            <span id="token-countdown" class="detail-value text-glow-green">读取中...</span>
-          </div>
-        </div>
-
-        <!-- 核心操作按钮 -->
-        <div class="action-group">
-          <button id="btn-download" class="btn-primary ripple btn-pulse">
-            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round"
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            <span>导出身份信息</span>
-          </button>
-        </div>
-
-        <!-- 使用帮助提示 (折叠卡，默认关闭) -->
-        <details class="accordion-card">
-          <summary class="accordion-header">
-            <h4>使用步骤提示</h4>
-            <svg class="accordion-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </summary>
-          <div class="accordion-content">
-            <div class="guide-steps">
-              <div class="step-item">
-                <span class="step-num">1</span>
-                <div class="step-content">
-                  <h5>第一步：导出身份信息</h5>
-                  <p>点击上方“导出身份信息”按钮，系统将自动把您本地的 ChatGPT 身份验证数据导出并下载保存为 <code>auth.json</code> 文件。</p>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-num">2</span>
-                <div class="step-content">
-                  <h5>第二步：将身份信息拷贝或移动到Codex配置目录</h5>
-                  <p>将 <code>auth.json</code> 移动到本机 Codex 配置目录中：</p>
-                  <div class="path-details">
-                    <p><strong>Windows:</strong> <code>%USERPROFILE%\.codex\auth.json</code></p>
-                    <p><strong>macOS:</strong> <code>~/.codex/auth.json</code></p>
-                  </div>
-                </div>
-              </div>
-              <div class="step-item">
-                <span class="step-num">3</span>
-                <div class="step-content">
-                  <h5>第三步：启动 Codex</h5>
-                  <p>文件放置完成后，直接启动或重启您的 Codex 客户端，即可自动加载授权，免除任何手机号验证流程。</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </details>
-
-        <!-- 数据隐私说明 (折叠卡，默认关闭) -->
-        <details class="accordion-card">
-          <summary class="accordion-header">
-            <h4>数据隐私说明</h4>
-            <svg class="accordion-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </summary>
-          <div class="accordion-content">
-            <ul class="privacy-list">
-              <li>
-                <span class="privacy-bullet success">●</span>
-                <div class="privacy-item">
-                  <strong>本地处理</strong>：数据不上云，不存储
-                </div>
-              </li>
-              <li>
-                <span class="privacy-bullet primary">●</span>
-                <div class="privacy-item">
-                  <strong>隐私安全</strong>：浏览器本地完成
-                </div>
-              </li>
-              <li>
-                <span class="privacy-bullet warning">●</span>
-                <div class="privacy-item">
-                  <strong>快速生成</strong>：减少重复登录验证
-                </div>
-              </li>
-            </ul>
-          </div>
-        </details>
-
-      </div>
-
-    </main>
-
-    <!-- 安全声明页脚 -->
-    <footer class="app-footer">
-      <div class="safety-badge">
-        <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round"
-            d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-        </svg>
-        <span>数据不上云 • 隐私安全 • 本地沙盒处理</span>
-      </div>
-    </footer>
-
-    <!-- 动态 Toast 反馈 -->
-    <div id="toast" class="toast-container">
-      <div class="toast-content">
-        <svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-        </svg>
-        <span id="toast-message">操作成功</span>
-      </div>
+<main>
+  <header><img src="../icons/icon-48.png" alt=""><div><h1>New API Codex OAuth 助手</h1><p>真实授权 · 完整凭证 · 本地导出</p></div></header>
+  <section>
+    <h2>1. 获取完整凭证</h2>
+    <p>点击登录，在官方页面完成授权。请保持本页打开。插件不会读取网页 Cookie，也不会生成假的 token。</p>
+    <button id="login">使用 ChatGPT 进行 OAuth 授权</button>
+    <div id="callback-panel" hidden>
+      <p>授权后浏览器会跳转到 <code>http://localhost:1455/auth/callback</code>。本插件不启动本地服务，因此页面可能显示“无法访问”。复制那一页地址栏中的<strong>完整网址</strong>，粘贴到这里即可。</p>
+      <p>请勿同时进行 Codex CLI 登录；回调网址只粘贴在本插件里。</p>
+      <label for="callback">本次授权的完整回调网址</label>
+      <input id="callback" type="password" autocomplete="off" spellcheck="false" placeholder="http://localhost:1455/auth/callback?code=…&amp;state=…">
+      <button id="exchange">完成授权并读取凭证</button>
+      <button id="cancel" class="secondary">取消本次授权</button>
     </div>
-
-  </div>
-
-  <script src="popup.js"></script>
+    <details><summary>已有 Codex auth.json？直接导入</summary>
+      <p>支持 Codex 原生嵌套格式与 New API 平铺格式。文件仅在本页内处理；缺少 refresh_token 或带占位凭证的文件会被拒绝。</p>
+      <label for="file">选择本地 JSON 文件</label><input id="file" type="file" accept=".json,application/json">
+    </details>
+  </section>
+  <p id="status" role="status" aria-live="polite">等待授权或导入。</p>
+  <section id="result" hidden>
+    <h2>2. 导出给 New API</h2>
+    <p id="account"></p><p id="expiry"></p>
+    <p>已检查 access_token、refresh_token、id_token 与 account_id 的字段及基本结构；实际调用权限仍以 New API 的请求结果为准。</p>
+    <pre id="preview" aria-label="脱敏的导出结构"></pre>
+    <button id="download">保存 New API JSON</button>
+    <button id="copy" class="secondary">复制 New API JSON</button>
+    <button id="codex" class="secondary">保存 Codex auth.json</button>
+    <button id="clear" class="secondary">清除本页凭证</button>
+    <p>New API：新增/编辑渠道 → ChatGPT Subscription (Codex) → 将 New API JSON 的完整内容粘贴到密钥框。它不是 New API 的全渠道备份文件。</p>
+    <p>保存时请选择 D 盘。凭证只留在本页内存，刷新或关闭本页会丢失；下载后的文件请妥善保存。</p>
+    <p>交给 New API 后让它管理刷新，避免其他客户端同时使用同一份 refresh_token 进行轮换。</p>
+  </section>
+  <footer>仅向 auth.openai.com 交换授权码；不自动上传到 New API 或其他服务。此插件为社区项目。</footer>
+</main>
+<script type="module" src="popup.js"></script>
 </body>
-
 </html>

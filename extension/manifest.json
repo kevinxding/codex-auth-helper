@@ -1,17 +1,19 @@
 {
   "manifest_version": 3,
-  "name": "Codex认证助手",
-  "short_name": "Codex Auth Helper",
-  "version": "1.1.0",
-  "description": "安全地在本地导出您的已登录 ChatGPT 会话配置，生成符合 Codex 规范的 auth.json 本地备份文件。纯本地离线处理。",
+  "name": "New API Codex OAuth 助手",
+  "short_name": "New API OAuth",
+  "version": "2.0.0",
+  "minimum_chrome_version": "109",
+  "description": "通过 OAuth PKCE 授权或导入 auth.json，导出 New API Codex 渠道凭证，保留真实 refresh_token。",
   "permissions": [
-    "downloads"
+    "downloads",
+    "clipboardWrite"
   ],
   "host_permissions": [
-    "https://chatgpt.com/"
+    "https://auth.openai.com/*"
   ],
   "action": {
-    "default_popup": "popup/popup.html"
+    "default_title": "打开 New API OAuth 助手"
   },
   "background": {
     "service_worker": "background.js"
